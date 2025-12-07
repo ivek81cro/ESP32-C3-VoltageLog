@@ -1,0 +1,40 @@
+# PlatformIO
+.pio/
+.vscode/
+*.o
+*.a
+*.so
+build/
+.DS_Store
+
+# Osjetljivi podaci - Firebase kredencijale
+src/firebase_config.h
+src/firebase_config.local.h
+
+# EEPROM podaci
+*.eeprom
+
+# Serial monitor logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+build_output.txt
+.pio/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
