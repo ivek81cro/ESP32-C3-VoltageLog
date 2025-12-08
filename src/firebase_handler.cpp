@@ -5,6 +5,7 @@
 bool firebaseInitialized = false;
 String idToken = "";
 unsigned long tokenExpiryTime = 0;
+static int recordCounter = 0;  // Brojač zapisa od 1-20
 
 // Funkcija za dobivanje ID Token-a putem anonimne autentifikacije
 bool getIdToken() {
@@ -164,6 +165,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
   json["voltage"]   = voltage;
   json["rawValue"]  = rawValue;
   json["device"]    = "ESP32-C3-VoltageLog";
+  json["recordNumber"] = recordCounter;
 
   String body;
   if (serializeJson(json, body) == 0) {
@@ -171,9 +173,12 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     return false;
   }
 
-  // Koristi timestamp kao child key
-  unsigned long timestamp = millis();
-  String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(timestamp) + ".json?auth=" + idToken;
+  // Koristi redni broj kao child key (1-20 u loop-u)
+  recordCounter++;
+  if (recordCounter > 20) {
+    recordCounter = 1;
+  }
+  String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
 
   HTTPClient http;
   http.begin(url);
@@ -205,7 +210,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
       Serial.println(F("Neautoriziran pristup, ponovno autentifikacija..."));
       if (getIdToken()) {
         // Ponovi zahtjev sa novim tokenom
-        String newUrl = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(timestamp) + ".json?auth=" + idToken;
+        String newUrl = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
         HTTPClient retryHttp;
         retryHttp.begin(newUrl);
         retryHttp.addHeader("Content-Type", "application/json");

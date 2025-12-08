@@ -19,7 +19,7 @@ const float adcReferenceVoltage = 3.3;
 const float adcResolution = 4095.0;
 
 // Kalibracijski faktor
-const float calibrationFactor = 0.92;
+const float calibrationFactor = 0.91;
 
 bool wifiConnected = false;
 unsigned long lastWiFiCheck = 0;
@@ -152,5 +152,5 @@ void loop() {
     }
   }
 
-  delay(10000); // Očitava svake 2 sekunde
+  delay(10000); // Očitava svakih 10 sekundi
 }
