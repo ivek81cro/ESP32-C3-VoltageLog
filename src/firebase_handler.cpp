@@ -5,9 +5,11 @@
 bool firebaseInitialized = false;
 String idToken = "";
 unsigned long tokenExpiryTime = 0;
-static int recordCounter = 0;  // Brojač zapisa od 1-20
 
-// Funkcija za dobivanje ID Token-a putem anonimne autentifikacije
+// Brojač zapisa 1..20 (loop)
+static int recordCounter = 0;
+
+// Funkcija za dobivanje ID Token-a putem email/password autentifikacije
 bool getIdToken() {
   Serial.println(F("Pokušaj dobivanja ID Token-a..."));
   
@@ -17,8 +19,8 @@ bool getIdToken() {
     return false;
   }
 
-  // URL za anonimnu autentifikaciju
-  String url = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + String(FIREBASE_API_KEY);
+  // URL za signInWithPassword (email/password)
+  String url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + String(FIREBASE_API_KEY);
   Serial.print(F("URL: "));
   Serial.println(url);
 
@@ -26,10 +28,10 @@ bool getIdToken() {
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  // POST zahtjev za anonimnu registraciju
-  String body = "{\"returnSecureToken\": true}";
+  // POST body sa email/lozinka (iz firebase_config.h)
+  String body = "{\"email\":\"" + String(FIREBASE_USER_EMAIL) + "\",\"password\":\"" + String(FIREBASE_USER_PASSWORD) + "\",\"returnSecureToken\": true}";
   
-  Serial.println(F("Slanje POST zahtjeva..."));
+  Serial.println(F("Slanje POST zahtjeva (signInWithPassword)..."));
   int httpCode = http.POST(body);
   String response = http.getString();
 
@@ -39,8 +41,8 @@ bool getIdToken() {
   Serial.println(response);
 
   if (httpCode == 200) {
-    // Parsiranje JSON odgovora - koristi DynamicJsonDocument zaFlexibilnost
-    DynamicJsonDocument doc(2048);  // Dinamički dokument sa max 2048 bajta
+    // Parsiranje JSON odgovora
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, response);
 
     if (!error) {
@@ -87,7 +89,7 @@ void initFirebase() {
 
 // Funkcija za brisanje starih unosa (čuva samo zadnjih 20)
 void deleteOldEntries() {
-  // Dohvati sve unose sa orderBy timestamp
+  // Dohvati sve unose sa orderBy key
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + ".json?orderBy=\"$key\"&limitToFirst=100&auth=" + idToken;
   
   HTTPClient http;
@@ -159,13 +161,18 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     }
   }
 
+  // Povećaj brojač i vrti ga 1..20
+  recordCounter++;
+  if (recordCounter > 20) {
+    recordCounter = 1;
+  }
+
   // Kreiranje JSON objekta
   StaticJsonDocument<256> json;
-  json["timestamp"] = millis();
+  json["recordNumber"] = recordCounter;
   json["voltage"]   = voltage;
   json["rawValue"]  = rawValue;
   json["device"]    = "ESP32-C3-VoltageLog";
-  json["recordNumber"] = recordCounter;
 
   String body;
   if (serializeJson(json, body) == 0) {
@@ -174,10 +181,6 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
   }
 
   // Koristi redni broj kao child key (1-20 u loop-u)
-  recordCounter++;
-  if (recordCounter > 20) {
-    recordCounter = 1;
-  }
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
 
   HTTPClient http;
