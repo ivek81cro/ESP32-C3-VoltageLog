@@ -1,6 +1,8 @@
 #include "firebase_handler.h"
 #include <ArduinoJson.h>
 #include <string.h>
+#include <WiFi.h>
+#include <time.h>
 
 bool firebaseInitialized = false;
 String idToken = "";
@@ -8,6 +10,7 @@ unsigned long tokenExpiryTime = 0;
 
 // Brojač zapisa 1..20 (loop)
 static int recordCounter = 0;
+static bool timeSynced = false;
 
 // Funkcija za dobivanje ID Token-a putem email/password autentifikacije
 bool getIdToken() {
@@ -81,9 +84,41 @@ void initFirebase() {
     Serial.println(F("✓ Firebase inicijaliziran!"));
     Serial.print(F("Database URL: "));
     Serial.println(FIREBASE_DATABASE_URL);
+    // Pokušaj sinkronizirati vrijeme s NTP-om (UTC)
+    configTime(0, 0, "pool.ntp.org", "time.google.com");
+    // pokušaj sinkronizacije vremena (kratki timeout)
+    timeSynced = false;
+    time_t now = time(nullptr);
+    unsigned long start = millis();
+    while ((now < 100000) && (millis() - start < 10000)) {
+      delay(500);
+      now = time(nullptr);
+    }
+    if (now >= 100000) {
+      timeSynced = true;
+      Serial.println(F("✓ Vrijeme sinkronizirano (UTC)."));
+    } else {
+      Serial.println(F("✗ Neuspjela sinkronizacija vremena (NTP) - pokušat će se kasnije."));
+    }
   } else {
     Serial.println(F("✗ Inicijalizacija Firebase-a neuspješna"));
     firebaseInitialized = false;
+  }
+}
+
+// Ensure time is synced; call before using time. Non-blocking short attempt.
+void ensureTimeSynced() {
+  if (timeSynced) return;
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  time_t now = time(nullptr);
+  unsigned long start = millis();
+  while ((now < 100000) && (millis() - start < 5000)) {
+    delay(300);
+    now = time(nullptr);
+  }
+  if (now >= 100000) {
+    timeSynced = true;
+    Serial.println(F("✓ Vrijeme sinkronizirano (UTC) (on-demand)."));
   }
 }
 
@@ -167,12 +202,32 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     recordCounter = 1;
   }
 
+  // Osiguraj da je vrijeme sinkronizirano (pokuša kratko ako nije)
+  ensureTimeSynced();
+
   // Kreiranje JSON objekta
   StaticJsonDocument<256> json;
   json["recordNumber"] = recordCounter;
   json["voltage"]   = voltage;
   json["rawValue"]  = rawValue;
   json["device"]    = "ESP32-C3-VoltageLog";
+
+  // Dodaj UTC timestamp (epoch) i ISO8601 string ako je dostupno
+  time_t now = time(nullptr);
+  if (now >= 100000) {
+    json["timestamp"] = (unsigned long)now;
+    struct tm *tminfo = gmtime(&now);
+    char timebuf[32] = {0};
+    if (tminfo != NULL) {
+      strftime(timebuf, sizeof(timebuf), "%Y-%m-%dT%H:%M:%SZ", tminfo);
+      json["utc_time"] = timebuf;
+    } else {
+      json["utc_time"] = "";
+    }
+  } else {
+    json["timestamp"] = 0; // oznaka da nije sinkronizirano
+    json["utc_time"] = "unsynced";
+  }
 
   String body;
   if (serializeJson(json, body) == 0) {
