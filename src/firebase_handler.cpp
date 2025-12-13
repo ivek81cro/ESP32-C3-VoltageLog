@@ -8,21 +8,21 @@ bool firebaseInitialized = false;
 String idToken = "";
 unsigned long tokenExpiryTime = 0;
 
-// Brojač zapisa 1..20 (loop)
+// Record counter 1..20 (loop)
 static int recordCounter = 0;
 static bool timeSynced = false;
 
-// Funkcija za dobivanje ID Token-a putem email/password autentifikacije
+// Function to obtain ID Token via email/password authentication
 bool getIdToken() {
   Serial.println(F("Pokušaj dobivanja ID Token-a..."));
   
-  // Provjera je li WiFi spojen
+  // Check if WiFi is connected
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println(F("✗ WiFi nije spojen!"));
     return false;
   }
 
-  // URL za signInWithPassword (email/password)
+  // URL for signInWithPassword (email/password)
   String url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + String(FIREBASE_API_KEY);
   Serial.print(F("URL: "));
   Serial.println(url);
@@ -31,7 +31,7 @@ bool getIdToken() {
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
-  // POST body sa email/lozinka (iz firebase_config.h)
+  // POST body with email/password (from firebase_config.h)
   String body = "{\"email\":\"" + String(FIREBASE_USER_EMAIL) + "\",\"password\":\"" + String(FIREBASE_USER_PASSWORD) + "\",\"returnSecureToken\": true}";
   
   Serial.println(F("Slanje POST zahtjeva (signInWithPassword)..."));
@@ -44,15 +44,15 @@ bool getIdToken() {
   Serial.println(response);
 
   if (httpCode == 200) {
-    // Parsiranje JSON odgovora
+    // Parse JSON response
     DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, response);
 
     if (!error) {
       idToken = doc["idToken"].as<String>();
       
-      // Provjera expiration time (tokenExpires je u sekundama)
-      int expiresIn = doc["expiresIn"] | 3600;  // default 1 sat
+      // Check expiration time (tokenExpires in seconds)
+      int expiresIn = doc["expiresIn"] | 3600;  // default 1 hour
       tokenExpiryTime = millis() + (expiresIn * 1000);
 
       Serial.println(F("✓ ID Token uspješno dobiven!"));
@@ -78,15 +78,15 @@ bool getIdToken() {
 void initFirebase() {
   Serial.println(F("Inicijalizacija Firebase-a..."));
   
-  // Pokušaj dobiti ID Token
+  // Attempt to get ID Token
   if (getIdToken()) {
     firebaseInitialized = true;
     Serial.println(F("✓ Firebase inicijaliziran!"));
     Serial.print(F("Database URL: "));
     Serial.println(FIREBASE_DATABASE_URL);
-    // Pokušaj sinkronizirati vrijeme s NTP-om (UTC)
+    // Attempt to sync time with NTP (UTC)
     configTime(0, 0, "pool.ntp.org", "time.google.com");
-    // pokušaj sinkronizacije vremena (kratki timeout)
+    // Attempt time sync (short timeout)
     timeSynced = false;
     time_t now = time(nullptr);
     unsigned long start = millis();
@@ -122,9 +122,9 @@ void ensureTimeSynced() {
   }
 }
 
-// Funkcija za brisanje starih unosa (čuva samo zadnjih 20)
+// Delete old entries (keep only the last 20)
 void deleteOldEntries() {
-  // Dohvati sve unose sa orderBy key
+  // Fetch all entries with orderBy key
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + ".json?orderBy=\"$key\"&limitToFirst=100&auth=" + idToken;
   
   HTTPClient http;
@@ -135,14 +135,14 @@ void deleteOldEntries() {
   String response = http.getString();
   
   if (httpCode == 200 && response != "null") {
-    // Parsiranje JSON odgovora
+    // Parse JSON response
     DynamicJsonDocument doc(4096);
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error && doc.is<JsonObject>()) {
       JsonObject obj = doc.as<JsonObject>();
       
-      // Broji unose
+      // Count entries
       int count = 0;
       unsigned long oldestKey = ULONG_MAX;
       
@@ -154,11 +154,11 @@ void deleteOldEntries() {
         }
       }
       
-      // Ako ima više od 20, obriši 5 najstarijih (da ne kršiš limit na API)
+      // If more than 20, delete the 5 oldest (avoid API limits)
       if (count > 20) {
         int deletedCount = 0;
         for (JsonPair p : obj) {
-          if (deletedCount >= 5) break;  // Obriši samo 5 odjednom
+          if (deletedCount >= 5) break;  // Delete only 5 at a time
           
           unsigned long keyNum = strtoul(p.key().c_str(), NULL, 10);
           if (keyNum == oldestKey) {
@@ -188,7 +188,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     return false;
   }
 
-  // Provjera je li token istekao
+  // Check if the token expired
   if (millis() > tokenExpiryTime) {
     Serial.println(F("ID Token istekao, ponovno se autentificiram..."));
     if (!getIdToken()) {
@@ -196,23 +196,23 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     }
   }
 
-  // Povećaj brojač i vrti ga 1..20
+  // Increment counter and loop 1..20
   recordCounter++;
   if (recordCounter > 20) {
     recordCounter = 1;
   }
 
-  // Osiguraj da je vrijeme sinkronizirano (pokuša kratko ako nije)
+  // Ensure time is synced (short attempt if not)
   ensureTimeSynced();
 
-  // Kreiranje JSON objekta
+  // Create JSON object
   StaticJsonDocument<256> json;
   json["recordNumber"] = recordCounter;
   json["voltage"]   = voltage;
   json["rawValue"]  = rawValue;
   json["device"]    = "ESP32-C3-VoltageLog";
 
-  // Dodaj UTC timestamp (epoch) i ISO8601 string ako je dostupno
+  // Add UTC timestamp (epoch) and ISO8601 string if available
   time_t now = time(nullptr);
   if (now >= 100000) {
     json["timestamp"] = (unsigned long)now;
@@ -225,7 +225,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
       json["utc_time"] = "";
     }
   } else {
-    json["timestamp"] = 0; // oznaka da nije sinkronizirano
+    json["timestamp"] = 0; // marker that time is not synced
     json["utc_time"] = "unsynced";
   }
 
@@ -235,7 +235,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     return false;
   }
 
-  // Koristi redni broj kao child key (1-20 u loop-u)
+  // Use sequential number as child key (1-20 loop)
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
 
   HTTPClient http;
@@ -248,9 +248,9 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
   if (httpCode == 200) {
     Serial.println(F("✓ Podaci uspješno poslani na Firebase!"));
     
-    // Sada obriši stare unose - čuva samo zadnjih 20 (svaki 10. unos)
+    // Now delete old entries - keep only the last 20 (every 10th entry)
     static unsigned long lastCleanup = 0;
-    if (millis() - lastCleanup > 30000) {  // Čisti svakih 30 sekundi
+    if (millis() - lastCleanup > 30000) {  // Clean every 30 seconds
       deleteOldEntries();
       lastCleanup = millis();
     }
@@ -263,11 +263,11 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
     Serial.print(F("Odgovor: "));
     Serial.println(response);
     
-    // Ako je 401, pokušaj ponovno dobiti token
+    // If 401, try to obtain token again
     if (httpCode == 401) {
       Serial.println(F("Neautoriziran pristup, ponovno autentifikacija..."));
       if (getIdToken()) {
-        // Ponovi zahtjev sa novim tokenom
+        // Retry request with new token
         String newUrl = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
         HTTPClient retryHttp;
         retryHttp.begin(newUrl);

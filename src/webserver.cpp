@@ -4,13 +4,13 @@
 #include "webserver.h"
 #include "config.h"
 
-// Globalna instanca servera
+// Global server instance
 AsyncWebServer server(80);
 
-// Flag da rute i server pokrećemo samo jednom
+// Flag to start routes and server only once
 static bool serverSetup = false;
 
-// Cijeli HTML u PROGMEM-u
+// Entire HTML in PROGMEM
 const char htmlPage[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="hr">
@@ -262,14 +262,14 @@ void setupWebServer() {
   Serial.println("Setting up web server...");
 
   if (!serverSetup) {
-    // Glavna stranica - bilo koja metoda (GET, HEAD...)
+    // Main page - any method (GET, HEAD...)
     server.on("/", [](AsyncWebServerRequest *request) {
       Serial.print("Request: ");
       Serial.println(request->url());
       request->send_P(200, "text/html", htmlPage);
     });
 
-    // /config – spremanje SSID / password, prihvaća bilo koju metodu (forma šalje POST)
+    // /config – save SSID / password, accepts any method (form sends POST)
     server.on("/config", [](AsyncWebServerRequest *request) {
       Serial.println("\n=== POST /config ===");
 
@@ -282,19 +282,19 @@ void setupWebServer() {
         Serial.print("Password length: ");
         Serial.println(password.length());
 
-        // Spremi u EEPROM
+        // Save to EEPROM
         saveWiFiConfig(ssid.c_str(), password.c_str());
         
-        // Provjeri je li ispravno spremenj
+        // Verify if saved correctly
         WiFiConfig testConfig;
         loadWiFiConfig(testConfig);
         Serial.print("Verification - SSID from EEPROM: ");
         Serial.println(testConfig.ssid);
 
-        // Pošalji odgovor
+        // Send response
         request->send(200, "text/plain", "OK! Rebooting...");
 
-        // Čekaj malo prije resarta
+        // Wait a bit before restart
         delay(2000);
         ESP.restart();
       } else {
@@ -303,11 +303,11 @@ void setupWebServer() {
       }
     });
 
-    // /scan – skeniranje mreža
+    // /scan – network scanning
     server.on("/scan", [](AsyncWebServerRequest *request) {
       Serial.println("Request /scan");
 
-      int n = WiFi.scanNetworks(false, false);  // blokirajući scan
+      int n = WiFi.scanNetworks(false, false);  // blocking scan
 
       String json = "[";
       for (int i = 0; i < n; i++) {
@@ -322,14 +322,14 @@ void setupWebServer() {
       }
       json += "]";
 
-      Serial.print("Pronadeno mreza: ");
+      Serial.print("Networks found: ");
       Serial.println(n);
 
       request->send(200, "application/json", json);
       WiFi.scanDelete();
     });
 
-    // 404 handler – ako je root ili /index.html, vrati glavnu stranicu
+    // 404 handler – if root or /index.html, return main page
     server.onNotFound([](AsyncWebServerRequest *request) {
       Serial.print("Not found: ");
       Serial.println(request->url());
@@ -350,5 +350,5 @@ void setupWebServer() {
 }
 
 void handleWebServer() {
-  // AsyncWebServer sam hendla konekcije, ovdje nije potrebno nista
+  // AsyncWebServer handles connections itself, nothing needed here
 }

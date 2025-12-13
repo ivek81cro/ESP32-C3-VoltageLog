@@ -4,38 +4,38 @@
 #include "firebase_handler.h"
 #include "webserver.h"
 
-// Pin na koji je spojen signalni pin (S/OUT) modula
-// ESP32-C3: GPIO5 je na ADC2 (nije podržan). Koristi GPIO4 (ADC1, kanal 4)
+// Pin connected to the signal pin (S/OUT) of the module
+// ESP32-C3: GPIO5 is on ADC2 (not supported). Use GPIO4 (ADC1, channel 4)
 const int voltageSensorPin = 4;
 
-// Faktor skaliranja za modul 5:1
-// (5V ulaz daje 1V izlaz na S pinu, 15V ulaz daje 3V izlaz)
+// Scaling factor for 5:1 module
+// (5V input gives 1V output on S pin, 15V input gives 3V output)
 const float voltageDividerFactor = 5.0;
 
-// Referentni napon ESP32 ADC-a (tipično 3.3 V na C3)
+// Reference voltage of ESP32 ADC (typically 3.3 V on C3)
 const float adcReferenceVoltage = 3.3;
 
-// Rezolucija ADC-a na ESP32 je 12 bita (0 do 4095)
+// ADC resolution on ESP32 is 12 bits (0 to 4095)
 const float adcResolution = 4095.0;
 
-// Kalibracijski faktor
+// Calibration factor
 const float calibrationFactor = 0.91;
 
 bool wifiConnected = false;
 unsigned long lastWiFiCheck = 0;
-const unsigned long WIFI_CHECK_INTERVAL = 10000;    // provjera veze svakih 10 s
+const unsigned long WIFI_CHECK_INTERVAL = 10000;    // check connection every 10 s
 
 unsigned long lastFirebaseSend = 0;
-const unsigned long FIREBASE_SEND_INTERVAL = 60000;  // slanje na Firebase svakih 60 s
+const unsigned long FIREBASE_SEND_INTERVAL = 60000;  // send to Firebase every 60 s
 
 void connectToWiFi(const char* ssid, const char* password) {
-  Serial.println("\nPokušaj spajanja na WiFi...");
+  Serial.println("\nAttempting to connect to WiFi...");
   Serial.print("SSID: ");
   Serial.println(ssid);
 
   WiFi.mode(WIFI_STA);
-  WiFi.persistent(false);       // ne zapisuj automatski u flash
-  WiFi.setAutoReconnect(true);  // automatski reconnect
+  WiFi.persistent(false);       // do not save automatically to flash
+  WiFi.setAutoReconnect(true);  // auto reconnect
   WiFi.begin(ssid, password);
 
   int attempts = 0;
@@ -47,22 +47,22 @@ void connectToWiFi(const char* ssid, const char* password) {
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
-    Serial.println("\n✓ Spojeno na WiFi!");
-    Serial.print("IP adresa: ");
+    Serial.println("\n✓ Connected to WiFi!");
+    Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
 
-    // Inicijalizacija Firebase-a kad je WiFi gore
+    // Initialize Firebase when WiFi is up
     initFirebase();
   } else {
     wifiConnected = false;
-    Serial.println("\n✗ Nije moguće spojiti se na WiFi!");
+    Serial.println("\n✗ Unable to connect to WiFi!");
   }
 }
 
 void setupAccessPoint() {
-  Serial.println("Pokretanje Access Point moda...");
+  Serial.println("Starting Access Point mode...");
 
-  // AP + STA mod da možemo skenirati mreže
+  // AP + STA mode so we can scan networks
   WiFi.mode(WIFI_AP_STA);
 
   IPAddress apIP(192, 168, 4, 1);
@@ -81,76 +81,76 @@ void setupAccessPoint() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("\n\n=== ESP32 VoltageLog - Pokretanje ===");
+  Serial.println("\n\n=== ESP32 VoltageLog - Startup ===");
 
-  // Inicijalizacija EEPROM-a
+  // Initialize EEPROM
   initEEPROM();
 
-  // Postavke ADC-a za bolju preciznost
+  // ADC settings for better precision
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
   pinMode(voltageSensorPin, INPUT);
 
-  // Provjera je li WiFi konfiguracija pohranjena
+  // Check if WiFi configuration is stored
   if (hasValidWiFiConfig()) {
     WiFiConfig config;
     loadWiFiConfig(config);
     connectToWiFi(config.ssid, config.password);
   } else {
-    Serial.println("Nema pohrane WiFi kredencijala!");
-    Serial.println("Kreiram Access Point za konfiguraciju...");
+    Serial.println("No stored WiFi credentials!");
+    Serial.println("Creating Access Point for configuration...");
     setupAccessPoint();
   }
 
-  // Postavi web server (rute se dodaju samo jednom)
+  // Setup web server (routes added only once)
   setupWebServer();
 }
 
 void loop() {
-  // Provjera WiFi veze ako je trenutno spojena
+  // Check WiFi connection if currently connected
   if (wifiConnected && millis() - lastWiFiCheck > WIFI_CHECK_INTERVAL) {
     if (WiFi.status() != WL_CONNECTED) {
       wifiConnected = false;
-      Serial.println("WiFi veza prekinuta!");
+      Serial.println("WiFi connection lost!");
       setupAccessPoint();
-      setupWebServer();  // neće duplo registrirati rute
+      setupWebServer();  // won't register routes twice
     }
     lastWiFiCheck = millis();
   }
 
-  // Ako nije spojeno na WiFi i još nismo u AP/AP_STA modu, pokreni AP
+  // If not connected to WiFi and not yet in AP/AP_STA mode, start AP
   if (!wifiConnected && WiFi.getMode() == WIFI_STA) {
     setupAccessPoint();
   }
 
-  // AsyncWebServer se brine sam, ali ostavljam hook radi jasnoće
+  // AsyncWebServer handles itself, but leaving hook for clarity
   handleWebServer();
 
-  // 1. Očitavanje analogne vrijednosti (0 do 4095)
+  // 1. Read analog value (0 to 4095)
   int rawValue = analogRead(voltageSensorPin);
 
-  // 2. Izračun napona na S pinu modula
+  // 2. Calculate voltage on module's S pin
   float measuredVoltageADC =
       (rawValue * (adcReferenceVoltage / adcResolution)) * calibrationFactor;
 
-  // 3. Izračun stvarnog ulaznog napona koristeći faktor djelitelja
+  // 3. Calculate actual input voltage using divider factor
   float actualInputVoltage = measuredVoltageADC * voltageDividerFactor;
 
-  // Ispis rezultata na serijski monitor
-  Serial.print("Ocitana sirova vrijednost: ");
+  // Print results to serial monitor
+  Serial.print("Raw value read: ");
   Serial.print(rawValue);
-  Serial.print(" -> Napon ADC: ");
+  Serial.print(" -> ADC voltage: ");
   Serial.print(measuredVoltageADC);
-  Serial.print(" V -> Izmjereni napon: ");
+  Serial.print(" V -> Measured voltage: ");
   Serial.print(actualInputVoltage);
   Serial.println(" V");
 
-  // Slanje na Firebase ako je WiFi spojen
+  // Send to Firebase if WiFi connected
   if (wifiConnected && (millis() - lastFirebaseSend > FIREBASE_SEND_INTERVAL)) {
     if (sendVoltageToFirebase(actualInputVoltage, rawValue)) {
       lastFirebaseSend = millis();
     }
   }
 
-  delay(10000); // Očitava svakih 10 sekundi
+  delay(10000); // Read every 10 seconds
 }

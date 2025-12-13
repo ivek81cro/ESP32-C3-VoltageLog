@@ -1,21 +1,21 @@
 #ifndef FIREBASE_CONFIG_H
 #define FIREBASE_CONFIG_H
 
-// Firebase konfiguracija
-// Zamijeni sljedeće vrijednosti sa svojima iz Firebase Console-a
+// Firebase configuration
+// Replace the following values with yours from Firebase Console
 
-// Pronađi na: Firebase Console > Project Settings > General
+// Find at: Firebase Console > Project Settings > General
 #define FIREBASE_PROJECT_ID "your-project-id"
 
-// Pronađi na: Firebase Console > Realtime Database > ... > Database URL
+// Find at: Firebase Console > Realtime Database > ... > Database URL
 // Format: https://your-project-id-default-rtdb.firebaseio.com
 #define FIREBASE_DATABASE_URL "https://your-project-id-default-rtdb.firebaseio.com"
 
-// Pronađi na: Firebase Console > Project Settings > Web API Key
-// ili na Service Accounts tab
+// Find at: Firebase Console > Project Settings > Web API Key
+// or on Service Accounts tab
 #define FIREBASE_API_KEY "your-web-api-key-here"
 
-// Putanja u bazi gdje će se pohranjivati podaci
+// Path in database where data will be stored
 #define FIREBASE_PATH "/voltageReadings"
 
 #endif

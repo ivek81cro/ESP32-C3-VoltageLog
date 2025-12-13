@@ -6,7 +6,6 @@
 #include <ArduinoJson.h>
 #include "firebase_config.h"
 
-// Globalni status Firebase inicijalizacije
 extern bool firebaseInitialized;
 
 void initFirebase();

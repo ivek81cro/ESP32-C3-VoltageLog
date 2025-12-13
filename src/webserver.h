@@ -1,7 +1,7 @@
 #ifndef WEBSERVER_H
 #define WEBSERVER_H
 
-// Definiraj HTTP konstante prije ESPAsyncWebServer
+// Define HTTP constants before ESPAsyncWebServer
 #define HTTP_GET     0x01
 #define HTTP_HEAD    0x02
 #define HTTP_POST    0x04
