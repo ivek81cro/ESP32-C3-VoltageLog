@@ -2,8 +2,12 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <ArduinoJson.h>
 #include "webserver.h"
 #include "config.h"
+#include "ui/index_html.h"
+#include "ui/styles_css.h"
+#include "ui/script_js.h"
 #include "ui/index_html.h"
 #include "ui/styles_css.h"
 #include "ui/script_js.h"
@@ -57,6 +61,48 @@ void setupWebServer() {
     server.on("/", [](AsyncWebServerRequest *request) {
       Serial.print("Request: ");
       Serial.println(request->url());
+      String htmlContent = buildHtmlPage();
+      request->send(200, "text/html", htmlContent);
+    });
+
+    // /status - JSON status endpoint
+    server.on("/status", [](AsyncWebServerRequest *request) {
+      Serial.println("Request /status");
+      
+      // Create JSON status response
+      DynamicJsonDocument doc(512);
+      doc["device"] = "ESP32-C3-VoltageLog";
+      doc["version"] = deviceStatus.version;
+      doc["uptime"] = millis() / 1000;  // uptime in seconds
+      
+      // Voltage readings
+      JsonObject voltage = doc.createNestedObject("voltage");
+      voltage["current"] = deviceStatus.lastVoltage;
+      voltage["raw"] = deviceStatus.lastRawValue;
+      voltage["unit"] = "V";
+      
+      // WiFi status
+      JsonObject wifi = doc.createNestedObject("wifi");
+      wifi["connected"] = wifiConnected;
+      wifi["ssid"] = wifiConnected ? WiFi.SSID().c_str() : "";
+      wifi["ip"] = wifiConnected ? WiFi.localIP().toString().c_str() : "";
+      wifi["rssi"] = wifiConnected ? WiFi.RSSI() : 0;
+      
+      // Firebase status
+      JsonObject firebase = doc.createNestedObject("firebase");
+      firebase["connected"] = deviceStatus.firebaseConnected;
+      firebase["lastSend"] = deviceStatus.lastSendTime;
+      
+      // Readings timing
+      JsonObject timing = doc.createNestedObject("timing");
+      timing["lastRead"] = deviceStatus.lastReadTime;
+      timing["lastSend"] = deviceStatus.lastSendTime;
+      timing["nextSendIn"] = "60s";  // hardcoded for now
+      
+      String response;
+      serializeJson(doc, response);
+      
+      request->send(200, "application/json", response);
       String htmlContent = buildHtmlPage();
       request->send(200, "text/html", htmlContent);
     });
@@ -167,6 +213,8 @@ void setupWebServer() {
       Serial.println(request->url());
 
       if (request->url() == "/" || request->url() == "/index.html") {
+        String htmlContent = buildHtmlPage();
+        request->send(200, "text/html", htmlContent);
         String htmlContent = buildHtmlPage();
         request->send(200, "text/html", htmlContent);
       } else {
