@@ -14,56 +14,37 @@ AsyncWebServer server(80);
 // Flag to start routes and server only once
 static bool serverSetup = false;
 
-// HTML builder function - combines HTML with CSS and JS
+// HTML builder function - combines HTML template with CSS and JS from PROGMEM
 String buildHtmlPage() {
   String html = "";
-  html += F("<!DOCTYPE html>\r\n<html lang=\"hr\">\r\n<head>\r\n");
-  html += F("  <meta charset=\"UTF-8\">\r\n");
-  html += F("  <title>ESP32 WiFi Config</title>\r\n");
-  html += F("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n");
-  html += F("  <style>\r\n");
   
-  // Read CSS from PROGMEM
-  int cssLen = strlen_P(stylesCss);
-  for (int i = 0; i < cssLen; i++) {
-    html += (char)pgm_read_byte(stylesCss + i);
+  // Read entire HTML from PROGMEM
+  int htmlLen = strlen_P(indexHtml);
+  for (int i = 0; i < htmlLen; i++) {
+    char c = pgm_read_byte(indexHtml + i);
+    
+    // Replace CSS placeholder
+    if (strncmp_P(&indexHtml[i], PSTR("<!--CSS_PLACEHOLDER-->"), 22) == 0) {
+      int cssLen = strlen_P(stylesCss);
+      for (int j = 0; j < cssLen; j++) {
+        html += (char)pgm_read_byte(stylesCss + j);
+      }
+      i += 21;  // Skip past placeholder
+      continue;
+    }
+    
+    // Replace JS placeholder
+    if (strncmp_P(&indexHtml[i], PSTR("<!--JS_PLACEHOLDER-->"), 21) == 0) {
+      int jsLen = strlen_P(scriptJs);
+      for (int j = 0; j < jsLen; j++) {
+        html += (char)pgm_read_byte(scriptJs + j);
+      }
+      i += 20;  // Skip past placeholder
+      continue;
+    }
+    
+    html += c;
   }
-  html += F("\r\n  </style>\r\n");
-  html += F("</head>\r\n<body>\r\n");
-  
-  // HTML body
-  html += F("  <div class=\"container\">\r\n");
-  html += F("    <h1>ESP32 WiFi konfiguracija</h1>\r\n");
-  html += F("    <p class=\"subtitle\">\r\n");
-  html += F("      Spoji se na ovu stranicu, odaberi mrežu i upiši lozinku. Uređaj će se\r\n");
-  html += F("      zatim restartati i pokušati spojiti na tvoj WiFi.\r\n");
-  html += F("    </p>\r\n");
-  html += F("    <form id=\"wifiForm\" method=\"POST\" action=\"/config\">\r\n");
-  html += F("      <label for=\"ssid\">SSID (naziv mreže)</label>\r\n");
-  html += F("      <input type=\"text\" id=\"ssid\" name=\"ssid\" required>\r\n");
-  html += F("      <label for=\"password\">Lozinka</label>\r\n");
-  html += F("      <input type=\"password\" id=\"password\" name=\"password\" required>\r\n");
-  html += F("      <div class=\"actions\">\r\n");
-  html += F("        <button type=\"submit\" class=\"btn-primary\">Spremi i restartaj</button>\r\n");
-  html += F("        <button type=\"button\" class=\"btn-secondary\" id=\"scanBtn\">Skeniraj mreže</button>\r\n");
-  html += F("      </div>\r\n");
-  html += F("    </form>\r\n");
-  html += F("    <div class=\"status\" id=\"statusText\">Status: spremno.</div>\r\n");
-  html += F("    <div class=\"networks\">\r\n");
-  html += F("      <h2>Dostupne mreže</h2>\r\n");
-  html += F("      <ul class=\"network-list\" id=\"networkList\"></ul>\r\n");
-  html += F("      <p class=\"small\">Dodirni mrežu da automatski upiše SSID u polje iznad.</p>\r\n");
-  html += F("    </div>\r\n");
-  html += F("  </div>\r\n");
-  
-  // JavaScript
-  html += F("  <script>\r\n");
-  int jsLen = strlen_P(scriptJs);
-  for (int i = 0; i < jsLen; i++) {
-    html += (char)pgm_read_byte(scriptJs + i);
-  }
-  html += F("\r\n  </script>\r\n");
-  html += F("</body>\r\n</html>");
   
   return html;
 }
