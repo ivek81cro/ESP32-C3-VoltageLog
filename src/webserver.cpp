@@ -1,8 +1,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
 #include "webserver.h"
 #include "config.h"
+#include "ui/index_html.h"
+#include "ui/styles_css.h"
+#include "ui/script_js.h"
 
 // Global server instance
 AsyncWebServer server(80);
@@ -10,253 +14,59 @@ AsyncWebServer server(80);
 // Flag to start routes and server only once
 static bool serverSetup = false;
 
-// Entire HTML in PROGMEM
-const char htmlPage[] PROGMEM = R"HTML(
-<!DOCTYPE html>
-<html lang="hr">
-<head>
-  <meta charset="UTF-8">
-  <title>ESP32 WiFi Config</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f3f4f6;
-      color: #111827;
-    }
-
-    .container {
-      max-width: 480px;
-      margin: 32px auto;
-      padding: 24px;
-      background: #ffffff;
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-    }
-
-    h1 {
-      font-size: 1.4rem;
-      margin: 0 0 4px 0;
-      color: #111827;
-    }
-
-    .subtitle {
-      margin: 0 0 16px 0;
-      font-size: 0.9rem;
-      color: #6b7280;
-    }
-
-    label {
-      display: block;
-      font-size: 0.9rem;
-      margin: 12px 0 4px;
-    }
-
-    input[type="text"],
-    input[type="password"] {
-      width: 100%;
-      padding: 8px 10px;
-      box-sizing: border-box;
-      border-radius: 8px;
-      border: 1px solid #d1d5db;
-      font-size: 0.95rem;
-    }
-
-    input[type="text"]:focus,
-    input[type="password"]:focus {
-      outline: none;
-      border-color: #2563eb;
-      box-shadow: 0 0 0 1px #2563eb22;
-    }
-
-    button {
-      cursor: pointer;
-      border: none;
-      border-radius: 9999px;
-      padding: 8px 16px;
-      font-size: 0.95rem;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-primary {
-      background: #2563eb;
-      color: white;
-    }
-
-    .btn-primary:active {
-      transform: translateY(1px);
-    }
-
-    .btn-secondary {
-      background: #e5e7eb;
-      color: #111827;
-    }
-
-    .actions {
-      margin-top: 16px;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .status {
-      margin-top: 12px;
-      font-size: 0.85rem;
-      color: #6b7280;
-    }
-
-    .networks {
-      margin-top: 20px;
-      border-top: 1px solid #e5e7eb;
-      padding-top: 16px;
-    }
-
-    .networks h2 {
-      font-size: 1rem;
-      margin: 0 0 8px;
-    }
-
-    .network-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      max-height: 180px;
-      overflow-y: auto;
-    }
-
-    .network-item {
-      border-radius: 8px;
-      padding: 6px 8px;
-      margin-bottom: 6px;
-      border: 1px solid #e5e7eb;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.9rem;
-    }
-
-    .network-ssid {
-      font-weight: 500;
-    }
-
-    .network-rssi {
-      font-size: 0.8rem;
-      color: #6b7280;
-    }
-
-    .small {
-      font-size: 0.8rem;
-      color: #9ca3af;
-      margin-top: 4px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>ESP32 WiFi konfiguracija</h1>
-    <p class="subtitle">
-      Spoji se na ovu stranicu, odaberi mrežu i upiši lozinku. Uređaj će se
-      zatim restartati i pokušati spojiti na tvoj WiFi.
-    </p>
-
-    <form id="wifiForm" method="POST" action="/config">
-      <label for="ssid">SSID (naziv mreže)</label>
-      <input type="text" id="ssid" name="ssid" required>
-
-      <label for="password">Lozinka</label>
-      <input type="password" id="password" name="password" required>
-
-      <div class="actions">
-        <button type="submit" class="btn-primary">Spremi i restartaj</button>
-        <button type="button" class="btn-secondary" id="scanBtn">Skeniraj mreže</button>
-      </div>
-    </form>
-
-    <div class="status" id="statusText">
-      Status: spremno.
-    </div>
-
-    <div class="networks">
-      <h2>Dostupne mreže</h2>
-      <ul class="network-list" id="networkList"></ul>
-      <p class="small">Dodirni mrežu da automatski upiše SSID u polje iznad.</p>
-    </div>
-  </div>
-
-  <script>
-    const scanBtn = document.getElementById("scanBtn");
-    const listEl = document.getElementById("networkList");
-    const statusEl = document.getElementById("statusText");
-    const ssidInput = document.getElementById("ssid");
-
-    function setStatus(text) {
-      statusEl.textContent = "Status: " + text;
-      console.log(text);
-    }
-
-    scanBtn.addEventListener("click", () => {
-      setStatus("skaniram WiFi mreže...");
-      listEl.innerHTML = "";
-      fetch("/scan")
-        .then(r => {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        })
-        .then(data => {
-          if (!Array.isArray(data)) {
-            setStatus("neočekivan odgovor sa /scan");
-            return;
-          }
-
-          if (data.length === 0) {
-            setStatus("nema pronađenih mreža.");
-            return;
-          }
-
-          data.sort((a, b) => b.rssi - a.rssi);
-          setStatus("pronađeno " + data.length + " mreža.");
-
-          data.forEach(ap => {
-            const li = document.createElement("li");
-            li.className = "network-item";
-
-            const left = document.createElement("div");
-            left.className = "network-ssid";
-            left.textContent = ap.ssid || "(skriveni SSID)";
-
-            const right = document.createElement("div");
-            right.className = "network-rssi";
-            right.textContent = ap.rssi + " dBm";
-
-            li.appendChild(left);
-            li.appendChild(right);
-
-            li.addEventListener("click", () => {
-              if (ap.ssid) {
-                ssidInput.value = ap.ssid;
-                setStatus("odabrana mreža: " + ap.ssid);
-              }
-            });
-
-            listEl.appendChild(li);
-          });
-        })
-        .catch(err => {
-          console.error(err);
-          setStatus("greška pri skeniranju: " + err.message);
-        });
-    });
-  </script>
-</body>
-</html>
-)HTML";
+// HTML builder function - combines HTML with CSS and JS
+String buildHtmlPage() {
+  String html = "";
+  html += F("<!DOCTYPE html>\r\n<html lang=\"hr\">\r\n<head>\r\n");
+  html += F("  <meta charset=\"UTF-8\">\r\n");
+  html += F("  <title>ESP32 WiFi Config</title>\r\n");
+  html += F("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n");
+  html += F("  <style>\r\n");
+  
+  // Read CSS from PROGMEM
+  int cssLen = strlen_P(stylesCss);
+  for (int i = 0; i < cssLen; i++) {
+    html += (char)pgm_read_byte(stylesCss + i);
+  }
+  html += F("\r\n  </style>\r\n");
+  html += F("</head>\r\n<body>\r\n");
+  
+  // HTML body
+  html += F("  <div class=\"container\">\r\n");
+  html += F("    <h1>ESP32 WiFi konfiguracija</h1>\r\n");
+  html += F("    <p class=\"subtitle\">\r\n");
+  html += F("      Spoji se na ovu stranicu, odaberi mrežu i upiši lozinku. Uređaj će se\r\n");
+  html += F("      zatim restartati i pokušati spojiti na tvoj WiFi.\r\n");
+  html += F("    </p>\r\n");
+  html += F("    <form id=\"wifiForm\" method=\"POST\" action=\"/config\">\r\n");
+  html += F("      <label for=\"ssid\">SSID (naziv mreže)</label>\r\n");
+  html += F("      <input type=\"text\" id=\"ssid\" name=\"ssid\" required>\r\n");
+  html += F("      <label for=\"password\">Lozinka</label>\r\n");
+  html += F("      <input type=\"password\" id=\"password\" name=\"password\" required>\r\n");
+  html += F("      <div class=\"actions\">\r\n");
+  html += F("        <button type=\"submit\" class=\"btn-primary\">Spremi i restartaj</button>\r\n");
+  html += F("        <button type=\"button\" class=\"btn-secondary\" id=\"scanBtn\">Skeniraj mreže</button>\r\n");
+  html += F("      </div>\r\n");
+  html += F("    </form>\r\n");
+  html += F("    <div class=\"status\" id=\"statusText\">Status: spremno.</div>\r\n");
+  html += F("    <div class=\"networks\">\r\n");
+  html += F("      <h2>Dostupne mreže</h2>\r\n");
+  html += F("      <ul class=\"network-list\" id=\"networkList\"></ul>\r\n");
+  html += F("      <p class=\"small\">Dodirni mrežu da automatski upiše SSID u polje iznad.</p>\r\n");
+  html += F("    </div>\r\n");
+  html += F("  </div>\r\n");
+  
+  // JavaScript
+  html += F("  <script>\r\n");
+  int jsLen = strlen_P(scriptJs);
+  for (int i = 0; i < jsLen; i++) {
+    html += (char)pgm_read_byte(scriptJs + i);
+  }
+  html += F("\r\n  </script>\r\n");
+  html += F("</body>\r\n</html>");
+  
+  return html;
+}
 
 void setupWebServer() {
   Serial.println("Setting up web server...");
@@ -266,7 +76,48 @@ void setupWebServer() {
     server.on("/", [](AsyncWebServerRequest *request) {
       Serial.print("Request: ");
       Serial.println(request->url());
-      request->send_P(200, "text/html", htmlPage);
+      String htmlContent = buildHtmlPage();
+      request->send(200, "text/html", htmlContent);
+    });
+
+    // /status - JSON status endpoint
+    server.on("/status", [](AsyncWebServerRequest *request) {
+      Serial.println("Request /status");
+      
+      // Create JSON status response
+      DynamicJsonDocument doc(512);
+      doc["device"] = "ESP32-C3-VoltageLog";
+      doc["version"] = deviceStatus.version;
+      doc["uptime"] = millis() / 1000;  // uptime in seconds
+      
+      // Voltage readings
+      JsonObject voltage = doc.createNestedObject("voltage");
+      voltage["current"] = deviceStatus.lastVoltage;
+      voltage["raw"] = deviceStatus.lastRawValue;
+      voltage["unit"] = "V";
+      
+      // WiFi status
+      JsonObject wifi = doc.createNestedObject("wifi");
+      wifi["connected"] = wifiConnected;
+      wifi["ssid"] = wifiConnected ? WiFi.SSID().c_str() : "";
+      wifi["ip"] = wifiConnected ? WiFi.localIP().toString().c_str() : "";
+      wifi["rssi"] = wifiConnected ? WiFi.RSSI() : 0;
+      
+      // Firebase status
+      JsonObject firebase = doc.createNestedObject("firebase");
+      firebase["connected"] = deviceStatus.firebaseConnected;
+      firebase["lastSend"] = deviceStatus.lastSendTime;
+      
+      // Readings timing
+      JsonObject timing = doc.createNestedObject("timing");
+      timing["lastRead"] = deviceStatus.lastReadTime;
+      timing["lastSend"] = deviceStatus.lastSendTime;
+      timing["nextSendIn"] = "60s";  // hardcoded for now
+      
+      String response;
+      serializeJson(doc, response);
+      
+      request->send(200, "application/json", response);
     });
 
     // /config – save SSID / password, accepts any method (form sends POST)
@@ -335,7 +186,8 @@ void setupWebServer() {
       Serial.println(request->url());
 
       if (request->url() == "/" || request->url() == "/index.html") {
-        request->send_P(200, "text/html", htmlPage);
+        String htmlContent = buildHtmlPage();
+        request->send(200, "text/html", htmlContent);
       } else {
         request->send(404, "text/plain", "Not found");
       }
