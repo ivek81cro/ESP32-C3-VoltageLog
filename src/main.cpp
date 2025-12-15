@@ -28,6 +28,9 @@ const unsigned long WIFI_CHECK_INTERVAL = 10000;    // check connection every 10
 unsigned long lastFirebaseSend = 0;
 const unsigned long FIREBASE_SEND_INTERVAL = 60000;  // send to Firebase every 60 s
 
+// Status tracking variables (for /status endpoint)
+DeviceStatus deviceStatus;
+
 void connectToWiFi(const char* ssid, const char* password) {
   Serial.println("\nAttempting to connect to WiFi...");
   Serial.print("SSID: ");
@@ -145,10 +148,17 @@ void loop() {
   Serial.print(actualInputVoltage);
   Serial.println(" V");
 
+  // Update device status for /status endpoint
+  deviceStatus.lastVoltage = actualInputVoltage;
+  deviceStatus.lastRawValue = rawValue;
+  deviceStatus.lastReadTime = millis();
+  deviceStatus.firebaseConnected = checkFirebaseConnection();
+
   // Send to Firebase if WiFi connected
   if (wifiConnected && (millis() - lastFirebaseSend > FIREBASE_SEND_INTERVAL)) {
     if (sendVoltageToFirebase(actualInputVoltage, rawValue)) {
       lastFirebaseSend = millis();
+      deviceStatus.lastSendTime = millis();
     }
   }
 

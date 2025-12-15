@@ -15,7 +15,20 @@
 
 #include <ESPAsyncWebServer.h>
 
+// Device status structure
+struct DeviceStatus {
+  float lastVoltage;
+  int lastRawValue;
+  unsigned long lastReadTime;
+  unsigned long lastSendTime;
+  bool firebaseConnected;
+  int recordNumber;
+  const char* version;
+};
+
 extern AsyncWebServer server;
+extern DeviceStatus deviceStatus;
+extern bool wifiConnected;
 
 void setupWebServer();
 void handleWebServer();
