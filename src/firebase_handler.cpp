@@ -3,6 +3,7 @@
 #include <string.h>
 #include <WiFi.h>
 #include <time.h>
+#include "logger.h"
 
 bool firebaseInitialized = false;
 String idToken = "";
@@ -290,4 +291,77 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
 
 bool checkFirebaseConnection() {
   return firebaseInitialized && !idToken.isEmpty();
+}
+
+bool sendLogsToFirebase() {
+  if (!firebaseInitialized) {
+    Serial.println(F("Firebase nije inicijaliziran za slanje logova"));
+    return false;
+  }
+
+  // Provjeri ima li logova za slanje
+  if (!Logger::hasPendingLogs()) {
+    Serial.println(F("Nema logova za slanje"));
+    return true;
+  }
+
+  // Check if token expired
+  if (millis() > tokenExpiryTime) {
+    Serial.println(F("ID Token istekao, ponovno se autentificiram..."));
+    if (!getIdToken()) {
+      return false;
+    }
+  }
+
+  // Dohvati logove kao JSON
+  String logsJSON = Logger::getLogsAsJSON();
+  
+  Serial.print(F("Slanje logova na Firebase: "));
+  Serial.println(logsJSON);
+
+  // URL za slanje logova (u drugoj bazi ili path-u)
+  String url = String(FIREBASE_DATABASE_URL) + "/logs.json?auth=" + idToken;
+
+  HTTPClient http;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  int httpCode = http.POST(logsJSON);
+  String response = http.getString();
+
+  if (httpCode == 200) {
+    Serial.println(F("✓ Logovi uspješno poslani na Firebase!"));
+    Logger::clearLogs();  // Obriši logove nakon uspješnog slanja
+    http.end();
+    return true;
+  } else {
+    Serial.print(F("✗ Greška pri slanju logova - HTTP kod: "));
+    Serial.println(httpCode);
+    Serial.print(F("Odgovor: "));
+    Serial.println(response);
+    
+    // Ako je 401, pokušaj ponovno autentifikaciju
+    if (httpCode == 401) {
+      Serial.println(F("Neautoriziran pristup, ponovno autentifikacija..."));
+      if (getIdToken()) {
+        // Pokušaj ponovno
+        String newUrl = String(FIREBASE_DATABASE_URL) + "/logs.json?auth=" + idToken;
+        HTTPClient retryHttp;
+        retryHttp.begin(newUrl);
+        retryHttp.addHeader("Content-Type", "application/json");
+        int retryCode = retryHttp.POST(logsJSON);
+        
+        if (retryCode == 200) {
+          Serial.println(F("✓ Slanje logova uspješno nakon ponovne autentifikacije!"));
+          Logger::clearLogs();
+          retryHttp.end();
+          return true;
+        }
+        retryHttp.end();
+      }
+    }
+    
+    http.end();
+    return false;
+  }
 }

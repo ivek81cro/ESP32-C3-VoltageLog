@@ -38,3 +38,5 @@ __pycache__/
 *.pyo
 *.egg-info/
 dist/
+LOGGER_TESTING.md
+LOGGER_GUIDE.md

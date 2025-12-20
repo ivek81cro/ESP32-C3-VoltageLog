@@ -11,5 +11,6 @@ extern bool firebaseInitialized;
 void initFirebase();
 bool sendVoltageToFirebase(float voltage, int rawValue);
 bool checkFirebaseConnection();
+bool sendLogsToFirebase();  // Nova funkcija za slanje logova
 
 #endif

@@ -3,6 +3,7 @@
 #include "config.h"
 #include "firebase_handler.h"
 #include "webserver.h"
+#include "logger.h"
 
 // Pin connected to the signal pin (S/OUT) of the module
 // ESP32-C3: GPIO5 is on ADC2 (not supported). Use GPIO4 (ADC1, channel 4)
@@ -56,6 +57,13 @@ void connectToWiFi(const char* ssid, const char* password) {
 
     // Initialize Firebase when WiFi is up
     initFirebase();
+    
+    // Slanje logova ako postoje
+    if (Logger::hasPendingLogs()) {
+      Serial.println("Slanje spremljenih logova na Firebase...");
+      delay(2000);  // Čekaj da se Firebase inicijalizira
+      sendLogsToFirebase();
+    }
   } else {
     wifiConnected = false;
     Serial.println("\n✗ Unable to connect to WiFi!");
@@ -86,6 +94,9 @@ void setup() {
   delay(2000);
   Serial.println("\n\n=== ESP32 VoltageLog - Startup ===");
 
+  // Inicijalizacija loggera
+  Logger::init();
+
   // Initialize EEPROM
   initEEPROM();
 
@@ -115,6 +126,7 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) {
       wifiConnected = false;
       Serial.println("WiFi connection lost!");
+      Logger::logWiFiDisconnect();  // Logira WiFi prekid
       setupAccessPoint();
       setupWebServer();  // won't register routes twice
     }
