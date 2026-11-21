@@ -25,10 +25,10 @@ bool getIdToken() {
 
   // URL for signInWithPassword (email/password)
   String url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + String(FIREBASE_API_KEY);
-  Serial.print(F("URL: "));
-  Serial.println(url);
 
   HTTPClient http;
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
@@ -41,8 +41,6 @@ bool getIdToken() {
 
   Serial.print(F("HTTP Code: "));
   Serial.println(httpCode);
-  Serial.print(F("Response: "));
-  Serial.println(response);
 
   if (httpCode == 200) {
     // Parse JSON response
@@ -51,14 +49,15 @@ bool getIdToken() {
 
     if (!error) {
       idToken = doc["idToken"].as<String>();
+      if (idToken.isEmpty()) { http.end(); return false; }
+      const char *uid = doc["localId"] | "";
+      Serial.printf("[Firebase] Auth UID: %s\n", *uid ? uid : "unavailable");
       
       // Check expiration time (tokenExpires in seconds)
       int expiresIn = doc["expiresIn"] | 3600;  // default 1 hour
       tokenExpiryTime = millis() + (expiresIn * 1000);
 
       Serial.println(F("✓ ID Token uspješno dobiven!"));
-      Serial.print(F("Token (first 20 chars): "));
-      Serial.println(idToken.substring(0, 20));
       
       http.end();
       return true;
@@ -69,7 +68,6 @@ bool getIdToken() {
   } else {
     Serial.print(F("✗ Greška pri dobivanju ID Token-a - HTTP kod: "));
     Serial.println(httpCode);
-    Serial.println(response);
   }
 
   http.end();
@@ -85,22 +83,8 @@ void initFirebase() {
     Serial.println(F("✓ Firebase inicijaliziran!"));
     Serial.print(F("Database URL: "));
     Serial.println(FIREBASE_DATABASE_URL);
-    // Attempt to sync time with NTP (UTC)
     configTime(0, 0, "pool.ntp.org", "time.google.com");
-    // Attempt time sync (short timeout)
-    timeSynced = false;
-    time_t now = time(nullptr);
-    unsigned long start = millis();
-    while ((now < 100000) && (millis() - start < 10000)) {
-      delay(500);
-      now = time(nullptr);
-    }
-    if (now >= 100000) {
-      timeSynced = true;
-      Serial.println(F("✓ Vrijeme sinkronizirano (UTC)."));
-    } else {
-      Serial.println(F("✗ Neuspjela sinkronizacija vremena (NTP) - pokušat će se kasnije."));
-    }
+
   } else {
     Serial.println(F("✗ Inicijalizacija Firebase-a neuspješna"));
     firebaseInitialized = false;
@@ -109,18 +93,7 @@ void initFirebase() {
 
 // Ensure time is synced; call before using time. Non-blocking short attempt.
 void ensureTimeSynced() {
-  if (timeSynced) return;
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
-  time_t now = time(nullptr);
-  unsigned long start = millis();
-  while ((now < 100000) && (millis() - start < 5000)) {
-    delay(300);
-    now = time(nullptr);
-  }
-  if (now >= 100000) {
-    timeSynced = true;
-    Serial.println(F("✓ Vrijeme sinkronizirano (UTC) (on-demand)."));
-  }
+  timeSynced = time(nullptr) >= 100000;
 }
 
 // Delete old entries (keep only the last 20)
@@ -129,6 +102,8 @@ void deleteOldEntries() {
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + ".json?orderBy=\"$key\"&limitToFirst=100&auth=" + idToken;
   
   HTTPClient http;
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   
@@ -165,6 +140,8 @@ void deleteOldEntries() {
           if (keyNum == oldestKey) {
             String deleteUrl = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + p.key().c_str() + ".json?auth=" + idToken;
             HTTPClient deleteHttp;
+            deleteHttp.setConnectTimeout(5000);
+            deleteHttp.setTimeout(5000);
             deleteHttp.begin(deleteUrl);
             int delCode = deleteHttp.sendRequest("DELETE");
             deleteHttp.end();
@@ -190,7 +167,7 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
   }
 
   // Check if the token expired
-  if (millis() > tokenExpiryTime) {
+  if (static_cast<int32_t>(millis() - tokenExpiryTime) >= 0) {
     Serial.println(F("ID Token istekao, ponovno se autentificiram..."));
     if (!getIdToken()) {
       return false;
@@ -240,53 +217,73 @@ bool sendVoltageToFirebase(float voltage, int rawValue) {
   String url = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
 
   HTTPClient http;
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.PUT(body);
-  String response = http.getString();
-
   if (httpCode == 200) {
     Serial.println(F("✓ Podaci uspješno poslani na Firebase!"));
-    
-    // Now delete old entries - keep only the last 20 (every 10th entry)
-    static unsigned long lastCleanup = 0;
-    if (millis() - lastCleanup > 30000) {  // Clean every 30 seconds
-      deleteOldEntries();
-      lastCleanup = millis();
-    }
     
     http.end();
     return true;
   } else {
     Serial.print(F("✗ Firebase greška - HTTP kod: "));
     Serial.println(httpCode);
-    Serial.print(F("Odgovor: "));
-    Serial.println(response);
     
-    // If 401, try to obtain token again
-    if (httpCode == 401) {
-      Serial.println(F("Neautoriziran pristup, ponovno autentifikacija..."));
-      if (getIdToken()) {
-        // Retry request with new token
-        String newUrl = String(FIREBASE_DATABASE_URL) + FIREBASE_PATH + "/" + String(recordCounter) + ".json?auth=" + idToken;
-        HTTPClient retryHttp;
-        retryHttp.begin(newUrl);
-        retryHttp.addHeader("Content-Type", "application/json");
-        int retryCode = retryHttp.PUT(body);
-        
-        if (retryCode == 200) {
-          Serial.println(F("✓ Retry uspješan!"));
-          retryHttp.end();
-          return true;
-        }
-        retryHttp.end();
-      }
-    }
+    if (httpCode == 401) firebaseInitialized = false;
+
     
     http.end();
     return false;
   }
+}
+
+bool registerVoltageSensor(const String &deviceId) {
+  if (!firebaseInitialized) return false;
+  if (static_cast<int32_t>(millis() - tokenExpiryTime) >= 0 && !getIdToken()) return false;
+  String url = String(FIREBASE_DATABASE_URL) + "/devices/" + deviceId + "/sensors/voltage.json?auth=" + idToken;
+  HTTPClient http;
+  http.setConnectTimeout(5000); http.setTimeout(5000);
+  http.begin(url); http.addHeader("Content-Type", "application/json");
+  int code = http.sendRequest("PATCH", "{\"type\":\"voltage\",\"unit\":\"V\"}");
+  http.end();
+  if (code != 200) Serial.printf("[Schema] Sensor registration failed: HTTP %d\n", code);
+  if (code == 401) firebaseInitialized = false;
+  return code == 200;
+}
+
+bool sendSchemaVoltage(const String &deviceId, const String &readingId, float voltage, int rawValue, uint32_t measuredAtSeconds) {
+  if (!firebaseInitialized || measuredAtSeconds == 0) return false;
+  if (static_cast<int32_t>(millis() - tokenExpiryTime) >= 0 && !getIdToken()) return false;
+  StaticJsonDocument<256> json;
+  json["timestamp"] = static_cast<double>(measuredAtSeconds) * 1000.0;
+  json["value"] = voltage;
+  json["rawValue"] = rawValue;
+  String body; serializeJson(json, body);
+  String url = String(FIREBASE_DATABASE_URL) + "/readings/" + deviceId + "/voltage/" + readingId + ".json?auth=" + idToken;
+  HTTPClient http;
+  http.setConnectTimeout(5000); http.setTimeout(5000);
+  http.begin(url); http.addHeader("Content-Type", "application/json");
+  int code = http.PUT(body);
+  if (code != 200) {
+    String response = http.getString();
+    StaticJsonDocument<256> error;
+    if (!deserializeJson(error, response)) {
+      const char *reason = error["error"] | "";
+      if (strcmp(reason, "Permission denied") == 0 || strcmp(reason, "Permission denied.") == 0)
+        Serial.println("[Schema] Firebase: permission denied");
+      else if (strcmp(reason, "Auth token is expired") == 0)
+        Serial.println("[Schema] Firebase: auth token expired");
+      else Serial.println("[Schema] Firebase: unrecognized error");
+    }
+  }
+  http.end();
+  if (code != 200) Serial.printf("[Schema] Reading write failed: HTTP %d\n", code);
+  else Serial.println("[Schema] Voltage reading saved");
+  if (code == 401) firebaseInitialized = false;
+  return code == 200;
 }
 
 bool checkFirebaseConnection() {
@@ -306,7 +303,7 @@ bool sendLogsToFirebase() {
   }
 
   // Check if token expired
-  if (millis() > tokenExpiryTime) {
+  if (static_cast<int32_t>(millis() - tokenExpiryTime) >= 0) {
     Serial.println(F("ID Token istekao, ponovno se autentificiram..."));
     if (!getIdToken()) {
       return false;
@@ -316,19 +313,18 @@ bool sendLogsToFirebase() {
   // Dohvati logove kao JSON
   String logsJSON = Logger::getLogsAsJSON();
   
-  Serial.print(F("Slanje logova na Firebase: "));
-  Serial.println(logsJSON);
+  Serial.println(F("Slanje logova na Firebase..."));
 
   // URL za slanje logova (u drugoj bazi ili path-u)
   String url = String(FIREBASE_DATABASE_URL) + "/logs.json?auth=" + idToken;
 
   HTTPClient http;
+  http.setConnectTimeout(5000);
+  http.setTimeout(5000);
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(logsJSON);
-  String response = http.getString();
-
   if (httpCode == 200) {
     Serial.println(F("✓ Logovi uspješno poslani na Firebase!"));
     Logger::clearLogs();  // Obriši logove nakon uspješnog slanja
@@ -337,8 +333,6 @@ bool sendLogsToFirebase() {
   } else {
     Serial.print(F("✗ Greška pri slanju logova - HTTP kod: "));
     Serial.println(httpCode);
-    Serial.print(F("Odgovor: "));
-    Serial.println(response);
     
     // Ako je 401, pokušaj ponovno autentifikaciju
     if (httpCode == 401) {
@@ -347,6 +341,8 @@ bool sendLogsToFirebase() {
         // Pokušaj ponovno
         String newUrl = String(FIREBASE_DATABASE_URL) + "/logs.json?auth=" + idToken;
         HTTPClient retryHttp;
+        retryHttp.setConnectTimeout(5000);
+        retryHttp.setTimeout(5000);
         retryHttp.begin(newUrl);
         retryHttp.addHeader("Content-Type", "application/json");
         int retryCode = retryHttp.POST(logsJSON);

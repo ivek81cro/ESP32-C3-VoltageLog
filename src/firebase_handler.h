@@ -10,6 +10,8 @@ extern bool firebaseInitialized;
 
 void initFirebase();
 bool sendVoltageToFirebase(float voltage, int rawValue);
+bool registerVoltageSensor(const String &deviceId);
+bool sendSchemaVoltage(const String &deviceId, const String &readingId, float voltage, int rawValue, uint32_t measuredAtSeconds);
 bool checkFirebaseConnection();
 bool sendLogsToFirebase();  // Nova funkcija za slanje logova
 

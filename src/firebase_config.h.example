@@ -15,6 +15,10 @@
 // or on Service Accounts tab
 #define FIREBASE_API_KEY "your-web-api-key-here"
 
+// Email/password for a dedicated Firebase Authentication user.
+#define FIREBASE_USER_EMAIL "user@example.invalid"
+#define FIREBASE_USER_PASSWORD "replace-locally"
+
 // Path in database where data will be stored
 #define FIREBASE_PATH "/voltageReadings"
 

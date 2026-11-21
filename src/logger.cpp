@@ -1,4 +1,5 @@
 #include "logger.h"
+#include "config.h"
 #include <EEPROM.h>
 #include <time.h>
 #include <ArduinoJson.h>
@@ -19,7 +20,7 @@ const int ENTRY_SIZE = 320;  // sizeof(unsigned long) + 256 char
 const int MAX_ENTRIES = 10;
 
 void Logger::init() {
-  EEPROM.begin(4096);
+  initEEPROM();
   
   // Provjeri je li header inicijaliziran
   LoggerHeader header;

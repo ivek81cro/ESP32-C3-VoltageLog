@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 
-#define EEPROM_SIZE   512
+#define EEPROM_SIZE   4096
 #define SSID_MAX_LEN  32
 #define PASS_MAX_LEN  64
 

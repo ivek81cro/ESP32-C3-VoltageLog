@@ -15,7 +15,11 @@ function setStatus(text) {
 scanBtn.addEventListener("click", () => {
   setStatus("skeniram WiFi mreže...");
   listEl.innerHTML = "";
-  fetch("/scan")
+  const scan = () => fetch("/scan").then(r => {
+    if (r.status === 202) return new Promise(resolve => setTimeout(resolve, 1000)).then(scan);
+    return r;
+  });
+  scan()
     .then(r => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
